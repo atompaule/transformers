@@ -22,7 +22,6 @@ from functools import partial
 from typing import Any, Optional, Union
 
 import numpy as np
-from huggingface_hub.dataclasses import validate_typed_dict
 
 from .dynamic_module_utils import custom_object_save
 from .image_processing_utils import (
@@ -367,9 +366,6 @@ class BaseVideoProcessor(BaseImageProcessorFast):
             captured_kwargs=kwargs.keys(),
             valid_processor_keys=list(self.valid_kwargs.__annotations__.keys()) + ["return_tensors"],
         )
-
-        # Perform type validation on received kwargs
-        validate_typed_dict(self.valid_kwargs, kwargs)
 
         # Set default kwargs from self. This ensures that if a kwarg is not provided
         # by the user, it gets its default value from the instance, or is set to None.

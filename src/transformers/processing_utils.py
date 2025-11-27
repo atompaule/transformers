@@ -28,7 +28,6 @@ from typing import Annotated, Any, Literal, Optional, TypedDict, TypeVar, Union
 
 import numpy as np
 import typing_extensions
-from huggingface_hub.dataclasses import validate_typed_dict
 from huggingface_hub.errors import EntryNotFoundError
 
 from .audio_utils import AudioInput, load_audio
@@ -1356,7 +1355,6 @@ class ProcessorMixin(PushToHubMixin):
                     {**preprocessor_typed_dict_obj.__annotations__, **typed_dict_obj.__annotations__},
                     total=False,
                 )
-            validate_typed_dict(typed_dict_obj, output_kwargs[key])
         return output_kwargs
 
     @classmethod
