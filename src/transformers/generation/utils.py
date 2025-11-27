@@ -111,7 +111,6 @@ from .stopping_criteria import (
     StopStringCriteria,
 )
 
-
 if TYPE_CHECKING:
     from ..modeling_utils import PreTrainedModel
     from ..tokenization_utils_base import PreTrainedTokenizerBase
@@ -4130,7 +4129,6 @@ class HRPOGenerationMixin(GenerationMixin):
             generation_config, use_model_defaults, **kwargs
         )
         self._validate_model_kwargs(model_kwargs.copy())
-        self._validate_assistant(assistant_model, tokenizer, assistant_tokenizer)
 
         # 2. Set generation parameters if not already defined
         if synced_gpus is None:
@@ -4327,7 +4325,6 @@ class HRPOGenerationMixin(GenerationMixin):
             generation_config=generation_config,
             stopping_criteria=stopping_criteria,
             tokenizer=tokenizer,
-            **kwargs,
         )
 
         # Set model_kwargs `use_cache` so we can use it later in forward runs
@@ -4445,37 +4442,15 @@ class HRPOGenerationMixin(GenerationMixin):
         unfinished_sequences = torch.ones(
             batch_size, dtype=torch.long, device=input_ids.device
         )
-        model_kwargs = self._get_initial_cache_position(
-            cur_len, input_ids.device, model_kwargs
+
+        model_forward = (
+            self.get_compiled_call(generation_config.compile_config)
+            if self._valid_auto_compile_criteria(model_kwargs, generation_config)
+            else self.__call__
         )
 
-        model_forward = self.__call__
-        compile_forward = self._valid_auto_compile_criteria(
-            model_kwargs, generation_config
-        )
-        if compile_forward:
-            os.environ["TOKENIZERS_PARALLELISM"] = "0"
-            # If we use FA2 and a static cache, we cannot compile with fullgraph
-            if self.config._attn_implementation == "flash_attention_2":
-                # only raise warning if the user passed an explicit compile-config
-                if (
-                    generation_config.compile_config is not None
-                    and generation_config.compile_config.fullgraph
-                ):
-                    logger.warning_once(
-                        "When using Flash Attention 2 and a static cache, you cannot use the option `CompileConfig(fullgraph=True)` as "
-                        "FA2 introduces graph breaks. We overrode the option with `fullgraph=False`."
-                    )
-                    generation_config.compile_config.fullgraph = False
-            model_forward = self.get_compiled_call(generation_config.compile_config)
-
-        if generation_config.prefill_chunk_size is not None:
-            model_kwargs = self._prefill_chunking(
-                input_ids, generation_config, **model_kwargs
-            )
-            is_prefill = False
-        else:
-            is_prefill = True
+        prefill_consumed = False
+        outputs = self._prefill(input_ids, generation_config, model_kwargs)
 
         is_thinking, last_thinking_states = None, None
         thinking_embeds = (
@@ -4491,39 +4466,37 @@ class HRPOGenerationMixin(GenerationMixin):
             if return_thinking_embeds
             else []
         )
+
         while self._has_unfinished_sequences(
             this_peer_finished, synced_gpus, device=input_ids.device
         ):
-            # prepare model inputs
-            model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+            if prefill_consumed:
+                model_inputs = self.prepare_inputs_for_generation(
+                    input_ids, **model_kwargs
+                )
 
-            # prepare variable output controls (note: some models won't accept all output controls)
-            model_inputs.update(
-                {"output_attentions": output_attentions} if output_attentions else {}
-            )
-            model_inputs.update(
-                {"output_hidden_states": output_hidden_states}
-                if output_hidden_states
-                else {}
-            )
+                # prepare variable output controls (note: some models won't accept all output controls)
+                model_inputs.update(
+                    {"output_attentions": output_attentions} if output_attentions else {}
+                )
+                model_inputs.update(
+                    {"output_hidden_states": output_hidden_states}
+                    if output_hidden_states
+                    else {}
+                )
 
-            # prepare is_thinking and last_thinking_states for latent reasoning
-            model_inputs.update(
-                {"is_thinking": is_thinking} if is_thinking is not None else {}
-            )
-            model_inputs.update(
-                {"last_thinking_states": last_thinking_states}
-                if last_thinking_states is not None
-                else {}
-            )
+                # prepare is_thinking and last_thinking_states for latent reasoning
+                model_inputs.update(
+                    {"is_thinking": is_thinking} if is_thinking is not None else {}
+                )
+                model_inputs.update(
+                    {"last_thinking_states": last_thinking_states}
+                    if last_thinking_states is not None
+                    else {}
+                )
 
-            if is_prefill:
-                outputs = self(**model_inputs, return_dict=True)
-                is_prefill = False
-            else:
                 outputs = model_forward(**model_inputs, return_dict=True)
-
-            # synced_gpus: don't waste resources running the code we don't need; kwargs must be updated before skipping
+            prefill_consumed = True
             model_kwargs = self._update_model_kwargs_for_generation(
                 outputs,
                 model_kwargs,
@@ -4582,14 +4555,28 @@ class HRPOGenerationMixin(GenerationMixin):
             if streamer is not None:
                 streamer.put(next_tokens.cpu())
 
-            strs = processing_class.batch_decode(input_ids[:, input_len:])
-            is_thinking = [self.answer_start not in s for s in strs]
-            last_thinking_states = torch.einsum(
-                "bv,vd->bd", probs, self.get_input_embeddings().weight
-            )
-            last_thinking_states /= torch.sqrt((probs**2).sum(-1, keepdim=True)).to(
-                last_thinking_states.dtype
-            )
+            if processing_class:
+                strs = processing_class.batch_decode(input_ids[:, input_len:])
+                is_thinking = [self.answer_start not in s for s in strs]
+            else:
+                is_thinking = None
+
+            if is_thinking is not None:
+                if not do_sample:
+                    probs = nn.functional.softmax(next_token_scores, dim=-1)
+                
+                input_embeddings_weight = self.get_input_embeddings().weight
+                if probs.dtype != input_embeddings_weight.dtype:
+                    # Cast probs to match embeddings dtype if necessary (e.g. BFloat16)
+                    # einsum requires operands to have the same dtype
+                    probs = probs.to(input_embeddings_weight.dtype)
+
+                last_thinking_states = torch.einsum(
+                    "bv,vd->bd", probs, input_embeddings_weight
+                )
+                last_thinking_states /= torch.sqrt(
+                    (probs.to(torch.float32) ** 2).sum(-1, keepdim=True)
+                ).to(last_thinking_states.dtype)
 
             if (
                 return_thinking_embeds
@@ -4655,6 +4642,12 @@ class HRPOGenerationMixin(GenerationMixin):
             streamer.end()
 
         if return_dict_in_generate:
+            cache = None
+            if any(cache_key in model_kwargs for cache_key in ALL_CACHE_NAMES):
+                cache_key = next(
+                    cache_key for cache_key in ALL_CACHE_NAMES if cache_key in model_kwargs
+                )
+                cache = model_kwargs[cache_key]
             if self.config.is_encoder_decoder:
                 return GenerateEncoderDecoderOutput(
                     sequences=input_ids,
@@ -4665,7 +4658,7 @@ class HRPOGenerationMixin(GenerationMixin):
                     decoder_attentions=decoder_attentions,
                     cross_attentions=cross_attentions,
                     decoder_hidden_states=decoder_hidden_states,
-                    past_key_values=model_kwargs.get("past_key_values"),
+                    past_key_values=cache,
                 )
             else:
                 return GenerateDecoderOnlyOutput(
@@ -4674,7 +4667,7 @@ class HRPOGenerationMixin(GenerationMixin):
                     logits=raw_logits,
                     attentions=decoder_attentions,
                     hidden_states=decoder_hidden_states,
-                    past_key_values=model_kwargs.get("past_key_values"),
+                    past_key_values=cache,
                 )
         else:
             if return_thinking_embeds:
