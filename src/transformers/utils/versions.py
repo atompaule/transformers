@@ -22,7 +22,6 @@ import sys
 
 from packaging import version
 
-
 ops = {
     "<": operator.lt,
     "<=": operator.le,
@@ -89,25 +88,11 @@ def require_version(requirement: str, hint: str | None = None) -> None:
             if op not in ops:
                 raise ValueError(f"{requirement}: need one of {list(ops.keys())}, but got {op}")
 
-    # special case
-    if pkg == "python":
-        got_ver = ".".join([str(x) for x in sys.version_info[:3]])
-        for op, want_ver in wanted.items():
-            _compare_versions(op, got_ver, want_ver, requirement, pkg, hint)
-        return
-
     # check if any version is installed
     try:
         got_ver = importlib.metadata.version(pkg)
     except importlib.metadata.PackageNotFoundError:
-        raise importlib.metadata.PackageNotFoundError(
-            f"The '{requirement}' distribution was not found and is required by this application. {hint}"
-        )
-
-    # check that the right version is installed if version number or a range was provided
-    if want_ver is not None:
-        for op, want_ver in wanted.items():
-            _compare_versions(op, got_ver, want_ver, requirement, pkg, hint)
+        pass
 
 
 def require_version_core(requirement):

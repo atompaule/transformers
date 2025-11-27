@@ -25,9 +25,13 @@ from typing import TYPE_CHECKING
 
 # Check the dependencies satisfy the minimal versions required.
 from . import dependency_versions_check
+
+# Note: the following symbols are deliberately exported with `as`
+# so that mypy, pylint or other static linters can recognize them,
+# given that they are not exported using `__all__` in this file.
+from .utils import OptionalDependencyNotAvailable, _LazyModule
+from .utils import is_bitsandbytes_available as is_bitsandbytes_available
 from .utils import (
-    OptionalDependencyNotAvailable,
-    _LazyModule,
     is_essentia_available,
     is_g2p_en_available,
     is_librosa_available,
@@ -35,11 +39,6 @@ from .utils import (
     is_mlx_available,
     is_pretty_midi_available,
 )
-
-# Note: the following symbols are deliberately exported with `as`
-# so that mypy, pylint or other static linters can recognize them,
-# given that they are not exported using `__all__` in this file.
-from .utils import is_bitsandbytes_available as is_bitsandbytes_available
 from .utils import is_scipy_available as is_scipy_available
 from .utils import is_sentencepiece_available as is_sentencepiece_available
 from .utils import is_speech_available as is_speech_available
@@ -51,7 +50,6 @@ from .utils import is_torchvision_available as is_torchvision_available
 from .utils import is_vision_available as is_vision_available
 from .utils import logging as logging
 from .utils.import_utils import define_import_structure
-
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -107,6 +105,8 @@ _import_structure = {
         "AsyncTextIteratorStreamer",
         "CompileConfig",
         "GenerationConfig",
+        "GenerationMixin",
+        "HRPOGenerationMixin",
         "TextIteratorStreamer",
         "TextStreamer",
         "WatermarkingConfig",
@@ -286,7 +286,9 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_sentencepiece_and_tokenizers_objects
 
     _import_structure["utils.dummy_sentencepiece_and_tokenizers_objects"] = [
-        name for name in dir(dummy_sentencepiece_and_tokenizers_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_sentencepiece_and_tokenizers_objects)
+        if not name.startswith("_")
     ]
 else:
     _import_structure["convert_slow_tokenizer"] = [
@@ -341,7 +343,9 @@ try:
 except OptionalDependencyNotAvailable:
     from .utils import dummy_pt_objects
 
-    _import_structure["utils.dummy_pt_objects"] = [name for name in dir(dummy_pt_objects) if not name.startswith("_")]
+    _import_structure["utils.dummy_pt_objects"] = [
+        name for name in dir(dummy_pt_objects) if not name.startswith("_")
+    ]
 else:
     _import_structure["model_debugging_utils"] = [
         "model_addition_debugger_context",
@@ -433,7 +437,11 @@ else:
     _import_structure["modeling_flash_attention_utils"] = []
     _import_structure["modeling_layers"] = ["GradientCheckpointingLayer"]
     _import_structure["modeling_outputs"] = []
-    _import_structure["modeling_rope_utils"] = ["ROPE_INIT_FUNCTIONS", "dynamic_rope_update", "RopeParameters"]
+    _import_structure["modeling_rope_utils"] = [
+        "ROPE_INIT_FUNCTIONS",
+        "dynamic_rope_update",
+        "RopeParameters",
+    ]
     _import_structure["modeling_utils"] = ["PreTrainedModel", "AttentionInterface"]
     _import_structure["masking_utils"] = ["AttentionMaskInterface"]
     _import_structure["optimization"] = [
@@ -481,39 +489,57 @@ if TYPE_CHECKING:
     from .cache_utils import StaticSlidingWindowLayer as StaticSlidingWindowLayer
     from .configuration_utils import PreTrainedConfig as PreTrainedConfig
     from .configuration_utils import PretrainedConfig as PretrainedConfig
-    from .convert_slow_tokenizer import SLOW_TO_FAST_CONVERTERS as SLOW_TO_FAST_CONVERTERS
+    from .convert_slow_tokenizer import (
+        SLOW_TO_FAST_CONVERTERS as SLOW_TO_FAST_CONVERTERS,
+    )
     from .convert_slow_tokenizer import convert_slow_tokenizer as convert_slow_tokenizer
 
     # Data
     from .data import DataProcessor as DataProcessor
     from .data import InputExample as InputExample
     from .data import InputFeatures as InputFeatures
-    from .data import SingleSentenceClassificationProcessor as SingleSentenceClassificationProcessor
+    from .data import (
+        SingleSentenceClassificationProcessor as SingleSentenceClassificationProcessor,
+    )
     from .data import SquadExample as SquadExample
     from .data import SquadFeatures as SquadFeatures
     from .data import SquadV1Processor as SquadV1Processor
     from .data import SquadV2Processor as SquadV2Processor
     from .data import glue_compute_metrics as glue_compute_metrics
-    from .data import glue_convert_examples_to_features as glue_convert_examples_to_features
+    from .data import (
+        glue_convert_examples_to_features as glue_convert_examples_to_features,
+    )
     from .data import glue_output_modes as glue_output_modes
     from .data import glue_processors as glue_processors
     from .data import glue_tasks_num_labels as glue_tasks_num_labels
-    from .data import squad_convert_examples_to_features as squad_convert_examples_to_features
+    from .data import (
+        squad_convert_examples_to_features as squad_convert_examples_to_features,
+    )
     from .data import xnli_compute_metrics as xnli_compute_metrics
     from .data import xnli_output_modes as xnli_output_modes
     from .data import xnli_processors as xnli_processors
     from .data import xnli_tasks_num_labels as xnli_tasks_num_labels
     from .data.data_collator import DataCollator as DataCollator
-    from .data.data_collator import DataCollatorForLanguageModeling as DataCollatorForLanguageModeling
-    from .data.data_collator import DataCollatorForMultipleChoice as DataCollatorForMultipleChoice
+    from .data.data_collator import (
+        DataCollatorForLanguageModeling as DataCollatorForLanguageModeling,
+    )
+    from .data.data_collator import (
+        DataCollatorForMultipleChoice as DataCollatorForMultipleChoice,
+    )
     from .data.data_collator import (
         DataCollatorForPermutationLanguageModeling as DataCollatorForPermutationLanguageModeling,
     )
     from .data.data_collator import DataCollatorForSeq2Seq as DataCollatorForSeq2Seq
     from .data.data_collator import DataCollatorForSOP as DataCollatorForSOP
-    from .data.data_collator import DataCollatorForTokenClassification as DataCollatorForTokenClassification
-    from .data.data_collator import DataCollatorForWholeWordMask as DataCollatorForWholeWordMask
-    from .data.data_collator import DataCollatorWithFlattening as DataCollatorWithFlattening
+    from .data.data_collator import (
+        DataCollatorForTokenClassification as DataCollatorForTokenClassification,
+    )
+    from .data.data_collator import (
+        DataCollatorForWholeWordMask as DataCollatorForWholeWordMask,
+    )
+    from .data.data_collator import (
+        DataCollatorWithFlattening as DataCollatorWithFlattening,
+    )
     from .data.data_collator import DataCollatorWithPadding as DataCollatorWithPadding
     from .data.data_collator import DefaultDataCollator as DefaultDataCollator
     from .data.data_collator import default_data_collator as default_data_collator
@@ -521,29 +547,48 @@ if TYPE_CHECKING:
     from .data.datasets import GlueDataTrainingArguments as GlueDataTrainingArguments
     from .data.datasets import SquadDataset as SquadDataset
     from .data.datasets import SquadDataTrainingArguments as SquadDataTrainingArguments
-    from .feature_extraction_sequence_utils import SequenceFeatureExtractor as SequenceFeatureExtractor
+    from .feature_extraction_sequence_utils import (
+        SequenceFeatureExtractor as SequenceFeatureExtractor,
+    )
 
     # Feature Extractor
     from .feature_extraction_utils import BatchFeature as BatchFeature
-    from .feature_extraction_utils import FeatureExtractionMixin as FeatureExtractionMixin
+    from .feature_extraction_utils import (
+        FeatureExtractionMixin as FeatureExtractionMixin,
+    )
 
     # Generation
-    from .generation import AlternatingCodebooksLogitsProcessor as AlternatingCodebooksLogitsProcessor
+    from .generation import (
+        AlternatingCodebooksLogitsProcessor as AlternatingCodebooksLogitsProcessor,
+    )
     from .generation import AsyncTextIteratorStreamer as AsyncTextIteratorStreamer
     from .generation import BayesianDetectorConfig as BayesianDetectorConfig
     from .generation import BayesianDetectorModel as BayesianDetectorModel
-    from .generation import ClassifierFreeGuidanceLogitsProcessor as ClassifierFreeGuidanceLogitsProcessor
+    from .generation import (
+        ClassifierFreeGuidanceLogitsProcessor as ClassifierFreeGuidanceLogitsProcessor,
+    )
     from .generation import CompileConfig as CompileConfig
-    from .generation import EncoderNoRepeatNGramLogitsProcessor as EncoderNoRepeatNGramLogitsProcessor
-    from .generation import EncoderRepetitionPenaltyLogitsProcessor as EncoderRepetitionPenaltyLogitsProcessor
+    from .generation import (
+        EncoderNoRepeatNGramLogitsProcessor as EncoderNoRepeatNGramLogitsProcessor,
+    )
+    from .generation import (
+        EncoderRepetitionPenaltyLogitsProcessor as EncoderRepetitionPenaltyLogitsProcessor,
+    )
     from .generation import EosTokenCriteria as EosTokenCriteria
     from .generation import EpsilonLogitsWarper as EpsilonLogitsWarper
     from .generation import EtaLogitsWarper as EtaLogitsWarper
-    from .generation import ExponentialDecayLengthPenalty as ExponentialDecayLengthPenalty
-    from .generation import ForcedBOSTokenLogitsProcessor as ForcedBOSTokenLogitsProcessor
-    from .generation import ForcedEOSTokenLogitsProcessor as ForcedEOSTokenLogitsProcessor
+    from .generation import (
+        ExponentialDecayLengthPenalty as ExponentialDecayLengthPenalty,
+    )
+    from .generation import (
+        ForcedBOSTokenLogitsProcessor as ForcedBOSTokenLogitsProcessor,
+    )
+    from .generation import (
+        ForcedEOSTokenLogitsProcessor as ForcedEOSTokenLogitsProcessor,
+    )
     from .generation import GenerationConfig as GenerationConfig
     from .generation import GenerationMixin as GenerationMixin
+    from .generation import HRPOGenerationMixin as HRPOGenerationMixin
     from .generation import InfNanRemoveLogitsProcessor as InfNanRemoveLogitsProcessor
     from .generation import LogitNormalization as LogitNormalization
     from .generation import LogitsProcessor as LogitsProcessor
@@ -551,21 +596,35 @@ if TYPE_CHECKING:
     from .generation import MaxLengthCriteria as MaxLengthCriteria
     from .generation import MaxTimeCriteria as MaxTimeCriteria
     from .generation import MinLengthLogitsProcessor as MinLengthLogitsProcessor
-    from .generation import MinNewTokensLengthLogitsProcessor as MinNewTokensLengthLogitsProcessor
+    from .generation import (
+        MinNewTokensLengthLogitsProcessor as MinNewTokensLengthLogitsProcessor,
+    )
     from .generation import MinPLogitsWarper as MinPLogitsWarper
     from .generation import NoBadWordsLogitsProcessor as NoBadWordsLogitsProcessor
     from .generation import NoRepeatNGramLogitsProcessor as NoRepeatNGramLogitsProcessor
-    from .generation import PrefixConstrainedLogitsProcessor as PrefixConstrainedLogitsProcessor
-    from .generation import RepetitionPenaltyLogitsProcessor as RepetitionPenaltyLogitsProcessor
+    from .generation import (
+        PrefixConstrainedLogitsProcessor as PrefixConstrainedLogitsProcessor,
+    )
+    from .generation import (
+        RepetitionPenaltyLogitsProcessor as RepetitionPenaltyLogitsProcessor,
+    )
     from .generation import SequenceBiasLogitsProcessor as SequenceBiasLogitsProcessor
     from .generation import StoppingCriteria as StoppingCriteria
     from .generation import StoppingCriteriaList as StoppingCriteriaList
     from .generation import StopStringCriteria as StopStringCriteria
-    from .generation import SuppressTokensAtBeginLogitsProcessor as SuppressTokensAtBeginLogitsProcessor
-    from .generation import SuppressTokensLogitsProcessor as SuppressTokensLogitsProcessor
+    from .generation import (
+        SuppressTokensAtBeginLogitsProcessor as SuppressTokensAtBeginLogitsProcessor,
+    )
+    from .generation import (
+        SuppressTokensLogitsProcessor as SuppressTokensLogitsProcessor,
+    )
     from .generation import SynthIDTextWatermarkDetector as SynthIDTextWatermarkDetector
-    from .generation import SynthIDTextWatermarkingConfig as SynthIDTextWatermarkingConfig
-    from .generation import SynthIDTextWatermarkLogitsProcessor as SynthIDTextWatermarkLogitsProcessor
+    from .generation import (
+        SynthIDTextWatermarkingConfig as SynthIDTextWatermarkingConfig,
+    )
+    from .generation import (
+        SynthIDTextWatermarkLogitsProcessor as SynthIDTextWatermarkLogitsProcessor,
+    )
     from .generation import TemperatureLogitsWarper as TemperatureLogitsWarper
     from .generation import TextIteratorStreamer as TextIteratorStreamer
     from .generation import TextStreamer as TextStreamer
@@ -579,11 +638,15 @@ if TYPE_CHECKING:
     from .generation import WatermarkDetector as WatermarkDetector
     from .generation import WatermarkingConfig as WatermarkingConfig
     from .generation import WatermarkLogitsProcessor as WatermarkLogitsProcessor
-    from .generation import WhisperTimeStampLogitsProcessor as WhisperTimeStampLogitsProcessor
+    from .generation import (
+        WhisperTimeStampLogitsProcessor as WhisperTimeStampLogitsProcessor,
+    )
     from .hf_argparser import HfArgumentParser as HfArgumentParser
     from .image_processing_base import ImageProcessingMixin as ImageProcessingMixin
     from .image_processing_utils import BaseImageProcessor as BaseImageProcessor
-    from .image_processing_utils_fast import BaseImageProcessorFast as BaseImageProcessorFast
+    from .image_processing_utils_fast import (
+        BaseImageProcessorFast as BaseImageProcessorFast,
+    )
     from .image_utils import ImageFeatureExtractionMixin as ImageFeatureExtractionMixin
 
     # Integrations
@@ -598,14 +661,22 @@ if TYPE_CHECKING:
     from .integrations import is_tensorboard_available as is_tensorboard_available
     from .integrations import is_trackio_available as is_trackio_available
     from .integrations import is_wandb_available as is_wandb_available
-    from .integrations.executorch import TorchExportableModuleWithStaticCache as TorchExportableModuleWithStaticCache
-    from .integrations.executorch import convert_and_export_with_cache as convert_and_export_with_cache
+    from .integrations.executorch import (
+        TorchExportableModuleWithStaticCache as TorchExportableModuleWithStaticCache,
+    )
+    from .integrations.executorch import (
+        convert_and_export_with_cache as convert_and_export_with_cache,
+    )
     from .masking_utils import AttentionMaskInterface as AttentionMaskInterface
-    from .model_debugging_utils import model_addition_debugger_context as model_addition_debugger_context
+    from .model_debugging_utils import (
+        model_addition_debugger_context as model_addition_debugger_context,
+    )
 
     # Model Cards
     from .modelcard import ModelCard as ModelCard
-    from .modeling_layers import GradientCheckpointingLayer as GradientCheckpointingLayer
+    from .modeling_layers import (
+        GradientCheckpointingLayer as GradientCheckpointingLayer,
+    )
     from .modeling_rope_utils import ROPE_INIT_FUNCTIONS as ROPE_INIT_FUNCTIONS
     from .modeling_rope_utils import RopeParameters as RopeParameters
     from .modeling_rope_utils import dynamic_rope_update as dynamic_rope_update
@@ -613,13 +684,19 @@ if TYPE_CHECKING:
     from .modeling_utils import PreTrainedModel as PreTrainedModel
     from .models import *
     from .models.mamba.modeling_mamba import MambaCache as MambaCache
-    from .models.timm_wrapper import TimmWrapperImageProcessor as TimmWrapperImageProcessor
+    from .models.timm_wrapper import (
+        TimmWrapperImageProcessor as TimmWrapperImageProcessor,
+    )
 
     # Optimization
     from .optimization import Adafactor as Adafactor
     from .optimization import get_constant_schedule as get_constant_schedule
-    from .optimization import get_constant_schedule_with_warmup as get_constant_schedule_with_warmup
-    from .optimization import get_cosine_schedule_with_warmup as get_cosine_schedule_with_warmup
+    from .optimization import (
+        get_constant_schedule_with_warmup as get_constant_schedule_with_warmup,
+    )
+    from .optimization import (
+        get_cosine_schedule_with_warmup as get_cosine_schedule_with_warmup,
+    )
     from .optimization import (
         get_cosine_with_hard_restarts_schedule_with_warmup as get_cosine_with_hard_restarts_schedule_with_warmup,
     )
@@ -630,21 +707,31 @@ if TYPE_CHECKING:
         get_cosine_with_min_lr_schedule_with_warmup_lr_rate as get_cosine_with_min_lr_schedule_with_warmup_lr_rate,
     )
     from .optimization import get_inverse_sqrt_schedule as get_inverse_sqrt_schedule
-    from .optimization import get_linear_schedule_with_warmup as get_linear_schedule_with_warmup
-    from .optimization import get_polynomial_decay_schedule_with_warmup as get_polynomial_decay_schedule_with_warmup
+    from .optimization import (
+        get_linear_schedule_with_warmup as get_linear_schedule_with_warmup,
+    )
+    from .optimization import (
+        get_polynomial_decay_schedule_with_warmup as get_polynomial_decay_schedule_with_warmup,
+    )
     from .optimization import get_scheduler as get_scheduler
     from .optimization import get_wsd_schedule as get_wsd_schedule
 
     # Pipelines
     from .pipelines import AudioClassificationPipeline as AudioClassificationPipeline
-    from .pipelines import AutomaticSpeechRecognitionPipeline as AutomaticSpeechRecognitionPipeline
+    from .pipelines import (
+        AutomaticSpeechRecognitionPipeline as AutomaticSpeechRecognitionPipeline,
+    )
     from .pipelines import CsvPipelineDataFormat as CsvPipelineDataFormat
     from .pipelines import DepthEstimationPipeline as DepthEstimationPipeline
-    from .pipelines import DocumentQuestionAnsweringPipeline as DocumentQuestionAnsweringPipeline
+    from .pipelines import (
+        DocumentQuestionAnsweringPipeline as DocumentQuestionAnsweringPipeline,
+    )
     from .pipelines import FeatureExtractionPipeline as FeatureExtractionPipeline
     from .pipelines import FillMaskPipeline as FillMaskPipeline
     from .pipelines import ImageClassificationPipeline as ImageClassificationPipeline
-    from .pipelines import ImageFeatureExtractionPipeline as ImageFeatureExtractionPipeline
+    from .pipelines import (
+        ImageFeatureExtractionPipeline as ImageFeatureExtractionPipeline,
+    )
     from .pipelines import ImageSegmentationPipeline as ImageSegmentationPipeline
     from .pipelines import ImageTextToTextPipeline as ImageTextToTextPipeline
     from .pipelines import ImageToImagePipeline as ImageToImagePipeline
@@ -659,7 +746,9 @@ if TYPE_CHECKING:
     from .pipelines import PipelineDataFormat as PipelineDataFormat
     from .pipelines import QuestionAnsweringPipeline as QuestionAnsweringPipeline
     from .pipelines import SummarizationPipeline as SummarizationPipeline
-    from .pipelines import TableQuestionAnsweringPipeline as TableQuestionAnsweringPipeline
+    from .pipelines import (
+        TableQuestionAnsweringPipeline as TableQuestionAnsweringPipeline,
+    )
     from .pipelines import Text2TextGenerationPipeline as Text2TextGenerationPipeline
     from .pipelines import TextClassificationPipeline as TextClassificationPipeline
     from .pipelines import TextGenerationPipeline as TextGenerationPipeline
@@ -667,11 +756,21 @@ if TYPE_CHECKING:
     from .pipelines import TokenClassificationPipeline as TokenClassificationPipeline
     from .pipelines import TranslationPipeline as TranslationPipeline
     from .pipelines import VideoClassificationPipeline as VideoClassificationPipeline
-    from .pipelines import VisualQuestionAnsweringPipeline as VisualQuestionAnsweringPipeline
-    from .pipelines import ZeroShotAudioClassificationPipeline as ZeroShotAudioClassificationPipeline
-    from .pipelines import ZeroShotClassificationPipeline as ZeroShotClassificationPipeline
-    from .pipelines import ZeroShotImageClassificationPipeline as ZeroShotImageClassificationPipeline
-    from .pipelines import ZeroShotObjectDetectionPipeline as ZeroShotObjectDetectionPipeline
+    from .pipelines import (
+        VisualQuestionAnsweringPipeline as VisualQuestionAnsweringPipeline,
+    )
+    from .pipelines import (
+        ZeroShotAudioClassificationPipeline as ZeroShotAudioClassificationPipeline,
+    )
+    from .pipelines import (
+        ZeroShotClassificationPipeline as ZeroShotClassificationPipeline,
+    )
+    from .pipelines import (
+        ZeroShotImageClassificationPipeline as ZeroShotImageClassificationPipeline,
+    )
+    from .pipelines import (
+        ZeroShotObjectDetectionPipeline as ZeroShotObjectDetectionPipeline,
+    )
     from .pipelines import pipeline as pipeline
     from .processing_utils import ProcessorMixin as ProcessorMixin
     from .pytorch_utils import Conv1D as Conv1D
@@ -682,10 +781,14 @@ if TYPE_CHECKING:
     from .tokenization_utils_base import AddedToken as AddedToken
     from .tokenization_utils_base import BatchEncoding as BatchEncoding
     from .tokenization_utils_base import CharSpan as CharSpan
-    from .tokenization_utils_base import PreTrainedTokenizerBase as PreTrainedTokenizerBase
+    from .tokenization_utils_base import (
+        PreTrainedTokenizerBase as PreTrainedTokenizerBase,
+    )
     from .tokenization_utils_base import SpecialTokensMixin as SpecialTokensMixin
     from .tokenization_utils_base import TokenSpan as TokenSpan
-    from .tokenization_utils_fast import PreTrainedTokenizerFast as PreTrainedTokenizerFast
+    from .tokenization_utils_fast import (
+        PreTrainedTokenizerFast as PreTrainedTokenizerFast,
+    )
 
     # Trainer
     from .trainer import Trainer as Trainer
@@ -696,7 +799,9 @@ if TYPE_CHECKING:
     from .trainer_callback import TrainerCallback as TrainerCallback
     from .trainer_callback import TrainerControl as TrainerControl
     from .trainer_callback import TrainerState as TrainerState
-    from .trainer_pt_utils import torch_distributed_zero_first as torch_distributed_zero_first
+    from .trainer_pt_utils import (
+        torch_distributed_zero_first as torch_distributed_zero_first,
+    )
     from .trainer_seq2seq import Seq2SeqTrainer as Seq2SeqTrainer
     from .trainer_utils import EvalPrediction as EvalPrediction
     from .trainer_utils import IntervalStrategy as IntervalStrategy
@@ -704,7 +809,9 @@ if TYPE_CHECKING:
     from .trainer_utils import enable_full_determinism as enable_full_determinism
     from .trainer_utils import set_seed as set_seed
     from .training_args import TrainingArguments as TrainingArguments
-    from .training_args_seq2seq import Seq2SeqTrainingArguments as Seq2SeqTrainingArguments
+    from .training_args_seq2seq import (
+        Seq2SeqTrainingArguments as Seq2SeqTrainingArguments,
+    )
 
     # Files and general utilities
     from .utils import CONFIG_NAME as CONFIG_NAME
@@ -743,7 +850,9 @@ if TYPE_CHECKING:
     from .utils.quantization_config import AwqConfig as AwqConfig
     from .utils.quantization_config import BitNetQuantConfig as BitNetQuantConfig
     from .utils.quantization_config import BitsAndBytesConfig as BitsAndBytesConfig
-    from .utils.quantization_config import CompressedTensorsConfig as CompressedTensorsConfig
+    from .utils.quantization_config import (
+        CompressedTensorsConfig as CompressedTensorsConfig,
+    )
     from .utils.quantization_config import EetqConfig as EetqConfig
     from .utils.quantization_config import FbgemmFp8Config as FbgemmFp8Config
     from .utils.quantization_config import FineGrainedFP8Config as FineGrainedFP8Config
@@ -762,7 +871,9 @@ else:
 
     _import_structure = {k: set(v) for k, v in _import_structure.items()}
 
-    import_structure = define_import_structure(Path(__file__).parent / "models", prefix="models")
+    import_structure = define_import_structure(
+        Path(__file__).parent / "models", prefix="models"
+    )
     import_structure[frozenset({})].update(_import_structure)
 
     sys.modules[__name__] = _LazyModule(

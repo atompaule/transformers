@@ -1,3 +1,7 @@
+[project]
+name = "transformers"
+version = "4.57.3"
+
 [tool.coverage.run]
 source = ["transformers"]
 omit = [
