@@ -573,7 +573,7 @@ class Qwen2ForCausalLM(Qwen2PreTrainedModel, GenerationMixin):
         )
 
 
-class ThinkingResidualLambda(nn.Module):
+class LatentGateA(nn.Module):
     c = 8.0
 
     def __init__(self, config: Qwen2Config):
@@ -595,20 +595,22 @@ class ThinkingResidualLambda(nn.Module):
 class HRPOQwen2Model(Qwen2Model):
     def __init__(self, config: Qwen2Config):
         super().__init__(config)
-        self.thinking_residual_gate_r = nn.Linear(
-            config.hidden_size, config.hidden_size
-        )
-        self.thinking_residual_gate_i = nn.Linear(
-            config.hidden_size, config.hidden_size
-        )
-        self.thinking_residual_Lambda = ThinkingResidualLambda(config)
+        self.latent_gate_r = nn.Linear(config.hidden_size, config.hidden_size)
+        self.latent_gate_i = nn.Linear(config.hidden_size, config.hidden_size)
+        self.latent_gate_a = LatentGateA(config)
         self.post_init()
 
-    def thinking_residual(self, embeds, residual, eps=1e-8):
-        r_t = torch.sigmoid(self.thinking_residual_gate_r(embeds))
-        i_t = torch.sigmoid(self.thinking_residual_gate_i(embeds))
-        a_t = self.thinking_residual_Lambda(r_t)
-        return a_t * embeds + torch.sqrt(1 - a_t.pow(2) + eps) * (i_t * residual), a_t
+    def hybrid_embeds(self, discrete_embeds, soft_embeds, eps=1e-8):
+        r_t = torch.sigmoid(self.latent_gate_r(discrete_embeds))
+        a_t = self.latent_gate_a(r_t)
+
+        i_t = torch.sigmoid(self.latent_gate_i(discrete_embeds))
+
+        return (
+            a_t * discrete_embeds
+            + torch.sqrt(1 - a_t.pow(2) + eps) * (i_t * soft_embeds),
+            a_t,
+        )
 
     @check_model_inputs()
     @auto_docstring
@@ -618,31 +620,34 @@ class HRPOQwen2Model(Qwen2Model):
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[
+            torch.FloatTensor
+        ] = None,  # soft embeddings, will be None in the first step
         use_cache: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPast:
-        if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError(
-                "You must specify exactly one of input_ids or inputs_embeds"
-            )
 
+        # input_embeds is of shape (batch_size, seq_length, hidden_size)
+        # inputs_embeds is the embeddings of the input tokens
+
+        # thinking_mask is a boolean tensor of shape (batch_size, 1), but None in the first step (during prefill)
+        # will be True for all latent thought tokens during "thinking"
+        # soft_embeds is of shape (batch_size, hidden_size), but None in the first step (during prefill)
+        soft_embeds = kwargs.get(
+            "soft_embeds"
+        )  
+        thinking_mask = kwargs.get("thinking_mask")  # will be None in the first step
+
+        # turn inputs_embeds into discrete embeddings
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
 
-        thinking_embeds = inputs_embeds
-
-        inputs_embeds = self.embed_tokens(input_ids)
-
-        thinking_mask = kwargs.get("thinking_mask")
         if thinking_mask is not None:
-            new_inputs_embeds = inputs_embeds.clone()
-            new_inputs_embeds[thinking_mask] = self.thinking_residual(
+            inputs_embeds[thinking_mask] = self.hybrid_embeds(
                 inputs_embeds[thinking_mask],
-                thinking_embeds[thinking_mask],
+                soft_embeds[thinking_mask],
             )[0].to(inputs_embeds.dtype)
-            inputs_embeds = new_inputs_embeds
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)

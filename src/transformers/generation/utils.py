@@ -4452,20 +4452,13 @@ class HRPOGenerationMixin(GenerationMixin):
         prefill_consumed = False
         outputs = self._prefill(input_ids, generation_config, model_kwargs)
 
-        is_thinking, last_thinking_states = None, None
-        thinking_embeds = (
-            [self.get_input_embeddings()(input_ids)] if return_thinking_embeds else []
-        )
-        thinking_mask = (
-            [torch.zeros_like(input_ids, dtype=torch.bool, device=input_ids.device)]
-            if return_thinking_embeds
-            else []
-        )
-        embeds_ratio = (
-            [torch.ones_like(input_ids, dtype=torch.float32, device=input_ids.device)]
-            if return_thinking_embeds
-            else []
-        )
+        # outputs will contain logits (and may additionally contain loss, past_key_values, hidden_states, attentions) 
+        # embeds: (batch_size, seq_length, hidden_size), the props-weighted average over all embeddings of the vocabulary
+        soft_embeds = [self.get_input_embeddings()(input_ids)]
+        thinking_mask = [torch.zeros_like(input_ids, dtype=torch.bool, device=input_ids.device)]
+
+        # input_embeddings_weight: (vocab_size, hidden_size), all embeddings of the vocabulary
+        input_embeddings_weight = self.get_input_embeddings().weight
 
         while self._has_unfinished_sequences(
             this_peer_finished, synced_gpus, device=input_ids.device
@@ -4485,14 +4478,11 @@ class HRPOGenerationMixin(GenerationMixin):
                     else {}
                 )
 
-                # prepare is_thinking and last_thinking_states for latent reasoning
                 model_inputs.update(
-                    {"is_thinking": is_thinking} if is_thinking is not None else {}
+                    {"thinking_mask": thinking_mask[-1]}
                 )
                 model_inputs.update(
-                    {"last_thinking_states": last_thinking_states}
-                    if last_thinking_states is not None
-                    else {}
+                    {"soft_embeds": soft_embeds[-1]}
                 )
 
                 outputs = model_forward(**model_inputs, return_dict=True)
@@ -4555,78 +4545,30 @@ class HRPOGenerationMixin(GenerationMixin):
             if streamer is not None:
                 streamer.put(next_tokens.cpu())
 
-            if processing_class:
-                strs = processing_class.batch_decode(input_ids[:, input_len:])
-                is_thinking = [self.answer_start not in s for s in strs]
-            else:
-                is_thinking = None
+            # one string per batch element, decode the generated tokens into strings across the batch
+            generated_tokens_str = processing_class.batch_decode(input_ids[:, input_len:])
+            is_thinking = [self.answer_start not in s for s in generated_tokens_str]
+            next_thinking_mask = torch.tensor(is_thinking, device=input_ids.device, dtype=torch.bool).unsqueeze(1)
+            # each append will add a new tensor of batch_size x 1 to the thinking_mask list
+            # the first element in thinking_mask will be of shape (batch_size, initial_seq_length)
+            # all subsequent elements will be of shape (batch_size, 1)
+            thinking_mask.append(next_thinking_mask)
 
-            if is_thinking is not None:
-                if not do_sample:
-                    probs = nn.functional.softmax(next_token_scores, dim=-1)
-                
-                input_embeddings_weight = self.get_input_embeddings().weight
-                if probs.dtype != input_embeddings_weight.dtype:
-                    # Cast probs to match embeddings dtype if necessary (e.g. BFloat16)
-                    # einsum requires operands to have the same dtype
-                    probs = probs.to(input_embeddings_weight.dtype)
+            if not do_sample:
+                probs = nn.functional.softmax(next_token_scores, dim=-1)
 
-                last_thinking_states = torch.einsum(
-                    "bv,vd->bd", probs, input_embeddings_weight
-                )
-                last_thinking_states /= torch.sqrt(
-                    (probs.to(torch.float32) ** 2).sum(-1, keepdim=True)
-                ).to(last_thinking_states.dtype)
+            if probs.dtype != input_embeddings_weight.dtype:
+                probs = probs.to(input_embeddings_weight.dtype)
 
-            if (
-                return_thinking_embeds
-                and outputs.hidden_states is not None
-                and len(outputs.hidden_states) > 0
-            ):
-                # The assumption is that HRPO models return extra hidden states
-                # standard HF models might return a tuple of hidden states for layers
-                # We need to make sure we are accessing what we expect.
-                # If it's a standard model, hidden_states is usually a tuple of (num_layers + 1) tensors
-                # If it is our HRPO model, it might be returning [thinking_embeds, thinking_mask, embeds_ratio]
+            # next_soft_embeds: (batch_size, hidden_size), the props-weighted average over all embeddings of the vocabulary
+            next_soft_embeds = torch.einsum(
+                "bv,vd->bd", probs, input_embeddings_weight
+            )
+            next_soft_embeds /= torch.sqrt(
+                (probs.to(torch.float32) ** 2).sum(-1, keepdim=True)
+            ).to(next_soft_embeds.dtype)
 
-                # Check if we have enough elements
-                if len(outputs.hidden_states) >= 3:
-                    thinking_embeds.append(outputs.hidden_states[0].unsqueeze(1))
-                    thinking_mask.append(
-                        torch.tensor(
-                            outputs.hidden_states[1], device=input_ids.device
-                        ).unsqueeze(1)
-                    )
-                    embeds_ratio.append(
-                        torch.tensor(
-                            outputs.hidden_states[2], device=input_ids.device
-                        ).unsqueeze(1)
-                    )
-                else:
-                    # Fallback: append placeholders to maintain sequence length alignment
-                    # This happens e.g. in the first step when is_thinking is None
-                    # thinking_embeds is (B, 1, D)
-                    dtype = self.get_input_embeddings().weight.dtype
-                    hidden_size = self.config.hidden_size
-                    thinking_embeds.append(
-                        torch.zeros(
-                            (batch_size, 1, hidden_size),
-                            device=input_ids.device,
-                            dtype=dtype,
-                        )
-                    )
-                    thinking_mask.append(
-                        torch.zeros(
-                            (batch_size, 1), device=input_ids.device, dtype=torch.bool
-                        )
-                    )
-                    embeds_ratio.append(
-                        torch.ones(
-                            (batch_size, 1),
-                            device=input_ids.device,
-                            dtype=torch.float32,
-                        )
-                    )
+            soft_embeds.append(next_soft_embeds)
 
             unfinished_sequences = unfinished_sequences & ~stopping_criteria(
                 input_ids, scores
@@ -4671,20 +4613,9 @@ class HRPOGenerationMixin(GenerationMixin):
                 )
         else:
             if return_thinking_embeds:
-                thinking_embeds.append(self.get_input_embeddings()(input_ids[:, -1:]))
-                thinking_mask.append(
-                    torch.zeros_like(
-                        input_ids[:, -1:], dtype=torch.bool, device=input_ids.device
-                    )
-                )
-                embeds_ratio.append(
-                    torch.ones_like(
-                        input_ids[:, -1:], dtype=torch.float32, device=input_ids.device
-                    )
-                )
                 return (
                     input_ids,
-                    torch.cat(thinking_embeds, dim=1),
+                    torch.cat(soft_embeds, dim=1),
                     torch.cat(thinking_mask, dim=1),
                     torch.cat(embeds_ratio, dim=1),
                 )
