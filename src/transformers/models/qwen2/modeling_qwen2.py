@@ -628,20 +628,22 @@ class HRPOQwen2Model(Qwen2Model):
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPast:
 
+        if (input_ids is None) ^ (inputs_embeds is not None):
+            raise ValueError(
+                "You must specify exactly one of input_ids or inputs_embeds"
+            )
+
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)  # discrete embeddings
+
         # input_embeds is of shape (batch_size, seq_length, hidden_size)
         # inputs_embeds is the embeddings of the input tokens
 
-        # thinking_mask is a boolean tensor of shape (batch_size, 1), but None in the first step (during prefill)
+        # thinking_mask is a boolean tensor of shape (batch_size, 1), but None during prefill
         # will be True for all latent thought tokens during "thinking"
-        # soft_embeds is of shape (batch_size, hidden_size), but None in the first step (during prefill)
-        soft_embeds = kwargs.get(
-            "soft_embeds"
-        )  
-        thinking_mask = kwargs.get("thinking_mask")  # will be None in the first step
-
-        # turn inputs_embeds into discrete embeddings
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+        # soft_embeds is of shape (batch_size, hidden_size), but None during prefill
+        soft_embeds = kwargs.get("soft_embeds")
+        thinking_mask = kwargs.get("thinking_mask")  # will be None during prefill
 
         if thinking_mask is not None:
             inputs_embeds[thinking_mask] = self.hybrid_embeds(
@@ -772,60 +774,60 @@ class HRPOQwen2ForCausalLM(Qwen2PreTrainedModel, HRPOGenerationMixin):
             attentions=outputs.attentions,
         )
 
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        inputs_embeds=None,
-        cache_position=None,
-        position_ids=None,
-        use_cache=True,
-        **kwargs,
-    ):
-        # If we have a cache_position, we can assume that we are in a static cache situation
-        # and input_ids is a single token.
-        if cache_position is not None:
-            past_length = 0
-        else:
-            past_length = (
-                past_key_values.get_seq_length() if past_key_values is not None else 0
-            )
+    # def prepare_inputs_for_generation(
+    #     self,
+    #     input_ids,
+    #     past_key_values=None,
+    #     attention_mask=None,
+    #     inputs_embeds=None,
+    #     cache_position=None,
+    #     position_ids=None,
+    #     use_cache=True,
+    #     **kwargs,
+    # ):
+    #     # If we have a cache_position, we can assume that we are in a static cache situation
+    #     # and input_ids is a single token.
+    #     if cache_position is not None:
+    #         past_length = 0
+    #     else:
+    #         past_length = (
+    #             past_key_values.get_seq_length() if past_key_values is not None else 0
+    #         )
 
-        if past_length < input_ids.shape[1]:
-            # This is the first step, we don't need to do anything
-            pass
-        else:
-            # We are in a generation loop, we only need the last token
-            input_ids = input_ids[:, -1:]
-            if inputs_embeds is not None:
-                inputs_embeds = inputs_embeds[:, -1:]
+    #     if past_length < input_ids.shape[1]:
+    #         # This is the first step, we don't need to do anything
+    #         pass
+    #     else:
+    #         # We are in a generation loop, we only need the last token
+    #         input_ids = input_ids[:, -1:]
+    #         if inputs_embeds is not None:
+    #             inputs_embeds = inputs_embeds[:, -1:]
 
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -input_ids.shape[1] :]
+    #     if attention_mask is not None and position_ids is None:
+    #         # create position_ids on the fly for batch generation
+    #         position_ids = attention_mask.long().cumsum(-1) - 1
+    #         position_ids.masked_fill_(attention_mask == 0, 1)
+    #         if past_key_values:
+    #             position_ids = position_ids[:, -input_ids.shape[1] :]
 
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            # The `contiguous()` here is necessary to have a static stride during decoding. torchdynamo otherwise
-            # recompiles graphs as the stride of the input is sudden changed.
-            model_inputs = {"input_ids": input_ids.contiguous()}
+    #     # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+    #     if inputs_embeds is not None and past_key_values is None:
+    #         model_inputs = {"inputs_embeds": inputs_embeds}
+    #     else:
+    #         # The `contiguous()` here is necessary to have a static stride during decoding. torchdynamo otherwise
+    #         # recompiles graphs as the stride of the input is sudden changed.
+    #         model_inputs = {"input_ids": input_ids.contiguous()}
 
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "cache_position": cache_position,
-                "past_key_values": past_key_values,
-                "use_cache": use_cache,
-                "attention_mask": attention_mask,
-            }
-        )
-        return model_inputs
+    #     model_inputs.update(
+    #         {
+    #             "position_ids": position_ids,
+    #             "cache_position": cache_position,
+    #             "past_key_values": past_key_values,
+    #             "use_cache": use_cache,
+    #             "attention_mask": attention_mask,
+    #         }
+    #     )
+    #     return model_inputs
 
 
 class Qwen2ForSequenceClassification(
