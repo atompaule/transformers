@@ -4167,17 +4167,14 @@ class HRPOGenerationMixin(GenerationMixin):
             if not do_sample:
                 probs = nn.functional.softmax(next_token_scores, dim=-1)
 
-            if probs.dtype != input_embeddings_weight.dtype:
-                probs = probs.to(input_embeddings_weight.dtype)
-
             # next_soft_embeds: (batch_size, 1, hidden_size), the props-weighted average over all embeddings of the vocabulary
             next_soft_embeds = torch.einsum(
-                "bv,vd->bd", probs, input_embeddings_weight
+                "bv,vd->bd", probs.to(torch.float32), input_embeddings_weight.to(torch.float32)
             )
             next_soft_embeds /= torch.sqrt(
                 (probs.to(torch.float32) ** 2).sum(-1, keepdim=True)
             ).to(next_soft_embeds.dtype)
-            next_soft_embeds = next_soft_embeds.unsqueeze(1)
+            next_soft_embeds = next_soft_embeds.to(input_embeddings_weight.dtype).unsqueeze(1)
 
             soft_embeds.append(next_soft_embeds)
 

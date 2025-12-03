@@ -583,7 +583,11 @@ class LatentGateA(nn.Module):
     def reset_lambda_parameters(self, r_min=0.9, r_max=0.999):
         with torch.no_grad():
             nn.init.uniform_(self.Lambda, a=r_min, b=r_max)
-            self.Lambda.data.copy_(-torch.log((self.Lambda ** (-1.0 / self.c)) - 1))
+            lambda_float = self.Lambda.float() # need float32 for precision
+            lambda_power = lambda_float ** (-1.0 / self.c)
+            lambda_minus_one = lambda_power - 1
+            lambda_log = -torch.log(lambda_minus_one)
+            self.Lambda.data.copy_(lambda_log)
 
     def forward(self, r_t):
         a_t = torch.exp(
@@ -636,13 +640,15 @@ class HRPOQwen2Model(Qwen2Model):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)  # discrete embeddings
 
-        # input_embeds is of shape (batch_size, seq_length, hidden_size)
-        # inputs_embeds is the embeddings of the input tokens
+        # inputs_embeds is the discrete embeddings of the input tokens
+        # input_embeds is of shape (batch_size, 1, hidden_size) after prefill
+
+        # soft_embeds is the soft embeddings of the input tokens after prefill
+        # soft_embeds is of shape (batch_size, 1, hidden_size), but None during prefill
+        soft_embeds = kwargs.get("soft_embeds")
 
         # thinking_mask is a boolean tensor of shape (batch_size, 1), but None during prefill
         # will be True for all latent thought tokens during "thinking"
-        # soft_embeds is of shape (batch_size, hidden_size), but None during prefill
-        soft_embeds = kwargs.get("soft_embeds")
         thinking_mask = kwargs.get("thinking_mask")  # will be None during prefill
 
         if thinking_mask is not None:
