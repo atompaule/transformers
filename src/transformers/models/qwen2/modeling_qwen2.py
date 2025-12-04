@@ -610,11 +610,8 @@ class HRPOQwen2Model(Qwen2Model):
 
         i_t = torch.sigmoid(self.latent_gate_i(discrete_embeds))
 
-        return (
-            a_t * discrete_embeds
-            + torch.sqrt(1 - a_t.pow(2) + eps) * (i_t * soft_embeds),
-            a_t,
-        )
+        return a_t * discrete_embeds + torch.sqrt(1 - a_t.pow(2) + eps) * (i_t * soft_embeds)
+
 
     @check_model_inputs()
     @auto_docstring
@@ -655,7 +652,7 @@ class HRPOQwen2Model(Qwen2Model):
             inputs_embeds[thinking_mask] = self.hybrid_embeds(
                 inputs_embeds[thinking_mask],
                 soft_embeds[thinking_mask],
-            )[0].to(inputs_embeds.dtype)
+            ).to(inputs_embeds.dtype)
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
