@@ -604,14 +604,15 @@ class HRPOQwen2Model(Qwen2Model):
         self.latent_gate_a = LatentGateA(config)
         self.post_init()
 
-    def hybrid_embeds(self, discrete_embeds, soft_embeds, eps=1e-8):
+    def hybrid_embeds(self, discrete_embeds, soft_embeds, eps=1e-5):
         r_t = torch.sigmoid(self.latent_gate_r(discrete_embeds))
         a_t = self.latent_gate_a(r_t)
 
         i_t = torch.sigmoid(self.latent_gate_i(discrete_embeds))
 
-        return a_t * discrete_embeds + torch.sqrt(1 - a_t.pow(2) + eps) * (i_t * soft_embeds)
-
+        return a_t * discrete_embeds + torch.sqrt(1 - a_t.pow(2) + eps) * (
+            i_t * soft_embeds
+        )
 
     @check_model_inputs()
     @auto_docstring
@@ -652,10 +653,16 @@ class HRPOQwen2Model(Qwen2Model):
         thinking_mask = kwargs.get("thinking_mask")  # will be None during prefill
 
         if thinking_mask is not None:
-            inputs_embeds[thinking_mask] = self.hybrid_embeds(
+            if soft_embeds is None:
+                raise ValueError(
+                    "soft_embeds must be provided when thinking_mask is used."
+                )
+            hybrid_embeds = inputs_embeds.clone()
+            hybrid_embeds[thinking_mask] = self.hybrid_embeds(
                 inputs_embeds[thinking_mask],
                 soft_embeds[thinking_mask],
             ).to(inputs_embeds.dtype)
+            inputs_embeds = hybrid_embeds
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache(config=self.config)
