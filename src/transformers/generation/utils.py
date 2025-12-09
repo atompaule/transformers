@@ -4220,4 +4220,6 @@ class HRPOGenerationMixin(GenerationMixin):
                     past_key_values=cache,
                 )
         else:
-            return input_ids
+            soft_embeds = torch.cat(soft_embeds, dim=1)
+            thinking_mask = torch.cat(thinking_mask, dim=1)
+            return input_ids, soft_embeds, thinking_mask
