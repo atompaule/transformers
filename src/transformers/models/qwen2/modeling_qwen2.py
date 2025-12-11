@@ -578,7 +578,7 @@ class LatentGateA(nn.Module):
 
     def __init__(self, config: Qwen2Config):
         super().__init__()
-        self.Lambda = nn.Parameter(torch.randn(config.hidden_size))
+        self.Lambda = nn.Parameter(torch.randn(config.hidden_size, dtype=torch.float32))
 
     def reset_lambda_parameters(self, r_min=0.9, r_max=0.999):
         with torch.no_grad():
@@ -587,13 +587,17 @@ class LatentGateA(nn.Module):
             lambda_power = lambda_float ** (-1.0 / self.c)
             lambda_minus_one = lambda_power - 1
             lambda_log = -torch.log(lambda_minus_one)
-            self.Lambda.data.copy_(lambda_log)
+            self.Lambda.data.copy_(lambda_log.float())
 
     def forward(self, r_t):
+        lambda_fp32 = self.Lambda.float()
+        r_fp32 = r_t.float()
         a_t = torch.exp(
-            -self.c * nn.functional.softplus(-self.Lambda, beta=1, threshold=20) * r_t
+            -self.c
+            * nn.functional.softplus(-lambda_fp32, beta=1, threshold=20)
+            * r_fp32
         )
-        return a_t
+        return a_t.to(r_t.dtype)
 
 
 class HRPOQwen2Model(Qwen2Model):
